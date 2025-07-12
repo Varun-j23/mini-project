@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Body Outline Next to Real Body</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="outputCanvas"></canvas>
+
+  <!-- MediaPipe & Camera -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
+
+  <script>
+    const canvas = document.getElementById('outputCanvas');
+    const ctx = canvas.getContext('2d');
+    const video = document.createElement('video');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const pose = new Pose({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    function drawSilhouette(lm, offsetX = 150) {
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const get = i => ({
+        x: lm[i].x * w + offsetX,
+        y: lm[i].y * h,
+        v: lm[i].visibility
+      });
+
+      const isVisible = (...ids) => ids.every(i => lm[i].visibility > 0.5);
+
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = "#00f2ff";
+      ctx.strokeStyle = "#00f2ff";
+      ctx.lineWidth = 14;
+
+      // Torso
+      if (isVisible(11, 12, 24, 23)) {
+        const a = get(11), b = get(12), c = get(24), d = get(23);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Limbs
+      const drawLimb = (a, b) => {
+        const p1 = get(a), p2 = get(b);
+        if (p1.v > 0.5 && p2.v > 0.5) {
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      };
+
+      drawLimb(11, 13); drawLimb(13, 15); // Left arm
+      drawLimb(12, 14); drawLimb(14, 16); // Right arm
+      drawLimb(23, 25); drawLimb(25, 27); // Left leg
+      drawLimb(24, 26); drawLimb(26, 28); // Right leg
+
+      // Head
+      if (isVisible(0)) {
+        const nose = get(0);
+        ctx.beginPath();
+        ctx.arc(nose.x, nose.y - 30, 40, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    pose.onResults(results => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw mirrored webcam feed
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(results.image, -canvas.width, 0, canvas.width, canvas.height);
+      ctx.restore();
+
+      if (results.poseLandmarks) {
+        drawSilhouette(results.poseLandmarks, 120); // draw slightly to the right
+      }
+    });
+
+    const camera = new Camera(video, {
+      onFrame: async () => {
+        await pose.send({ image: video });
+      },
+      width: 1280,
+      height: 720
+    });
+
+    camera.start();
+  </script>
+</body>
+</html>
